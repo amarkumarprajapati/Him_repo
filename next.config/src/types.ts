@@ -1,0 +1,22 @@
+export type MapNode = {
+  device_id: string;
+  device_type: string;
+  ip_address: string;
+  port: number | null;
+  node_id: string | null;
+  node_name: string | null;
+  latitude: number;
+  longitude: number;
+  operating_status: string | null;
+  master_device: string | null;
+  heartbeat_status: string;
+  network_status: string;
+  status: string;
+  csvrunning_status: number;
+  station_name: string;
+  quard_id?: number; 
+  telemetry_timestamp: string;
+  created_at: string;
+  updated_at: string;
+  url?: string;
+};

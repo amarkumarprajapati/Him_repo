@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: himshravan-db
+  namespace: himshravan
+spec:
+  serviceName: himshravan-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: himshravan-db
+  template:
+    metadata:
+      labels:
+        app: himshravan-db
+    spec:
+      containers:
+        - name: postgres
+          image: himshravan-db:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: himshravan
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: himshravan-db
+  namespace: himshravan
+spec:
+  selector:
+    app: himshravan-db
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -1,0 +1,6 @@
+# Session_ID: b1cf74a6-df7c-43b9-b85a-3f7a00ee8c69
+# node_id: 9
+# master_lat: 18.4906868
+# master_long: 73.8554638
+
+timestamp,target_lat,target_long,target_frequency,target_signal_bw,target_received_power,device_ip,device_port

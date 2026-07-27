@@ -1,0 +1,122 @@
+services:
+  db:
+    build:
+      context: ./k8s/postgres
+      dockerfile: Dockerfile
+    image: himshravan-db:latest
+    container_name: himshravan-db
+    restart: unless-stopped
+    env_file:
+      - ./device/.env
+    environment:
+      POSTGRES_DB: ${DB_NAME:-himshravan}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-himshravan}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./device
+      dockerfile: Dockerfile
+    image: himshravan-backend:latest
+    container_name: himshravan-backend
+    restart: unless-stopped
+    env_file:
+      - ./device/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-himshravan}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "30800:8000"
+    volumes:
+      - ./device/logs:/app/logs
+      - ./device/cache:/app/cache
+      - ./device/staticfiles:/app/staticfiles
+    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py create_default_admin && gunicorn --config core/gunicorn.conf.py core.wsgi:application"
+
+  heartbeat-monitor:
+    image: himshravan-backend:latest
+    container_name: himshravan-heartbeat
+    restart: unless-stopped
+    env_file:
+      - ./device/.env
+    environment:
+      PYTHONUNBUFFERED: 1
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-himshravan}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./device/scripts:/app/scripts
+      - ./device/logs:/app/logs
+      # - /home/dell/Documents/July_21/create_runtime_files:/home/dell/Documents/July_21/create_runtime_files
+    command: bash /app/scripts/run_heartbeat.sh
+
+  cellular-satellite-monitor:
+    image: himshravan-backend:latest
+    container_name: himshravan-cellular-sat
+    restart: unless-stopped
+    env_file:
+      - ./device/.env
+    environment:
+      PYTHONUNBUFFERED: 1
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-himshravan}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./device/scripts:/app/scripts
+      - ./device/logs:/app/logs
+      # - /home/dell/Documents/July_21/create_runtime_files:/home/dell/Documents/July_21/create_runtime_files
+
+    command: python /app/scripts/cognent/cellular_satelliite_info.py
+
+  frontend:
+    build:
+      context: ./next.config
+      dockerfile: Dockerfile
+    image: himshravan-frontend:latest
+    container_name: himshravan-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000/api
+      PORT: 30301
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      - backend
+    ports:
+      - "30301:30301"
+
+  tileserver:
+    image: maptiler/tileserver-gl:latest
+    container_name: himshravan-tileserver
+    restart: unless-stopped
+    ports:
+      - "30808:8080"
+    volumes:
+      - /home/dell/Documents/MapTileServer:/data
+
+volumes:
+  postgres_data:

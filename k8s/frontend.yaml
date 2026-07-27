@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: himshravan-frontend
+  namespace: himshravan
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: himshravan-frontend
+  template:
+    metadata:
+      labels:
+        app: himshravan-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: himshravan-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: http://himshravan-backend:8000/api
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3001"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: himshravan-frontend
+  namespace: himshravan
+spec:
+  selector:
+    app: himshravan-frontend
+  ports:
+    - port: 3001
+      targetPort: 3001
+  type: LoadBalancer

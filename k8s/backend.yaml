@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: himshravan-backend
+  namespace: himshravan
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: himshravan-backend
+  template:
+    metadata:
+      labels:
+        app: himshravan-backend
+    spec:
+      containers:
+        - name: backend
+          image: himshravan-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DEBUG
+              value: "False"
+            - name: DB_HOST
+              value: himshravan-db
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: himshravan
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: postgres
+            - name: SECRET_KEY
+              value: change-me
+            - name: DJANGO_SUPERUSER_USERNAME
+              value: admin
+            - name: DJANGO_SUPERUSER_PASSWORD
+              value: Admin@123
+            - name: DJANGO_SUPERUSER_EMAIL
+              value: admin@example.com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: himshravan-backend
+  namespace: himshravan
+spec:
+  selector:
+    app: himshravan-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: LoadBalancer

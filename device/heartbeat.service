@@ -1,0 +1,16 @@
+[Unit]
+Description=Heartbeat monitoring service for device_info
+After=network.target
+
+[Service]
+Type=simple
+User=developer
+WorkingDirectory=/home/dell/Documents/HIMSHRAVAN_Backend
+ExecStart=/bin/bash /home/dell/Documents/HIMSHRAVAN_Backend/scripts/run_heartbeat.sh
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

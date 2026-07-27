@@ -1,0 +1,5 @@
+# node_modules copied from host to bypass network/DNS issues
+# .next folder copied from host since we build on host
+#.next
+.git
+README.md

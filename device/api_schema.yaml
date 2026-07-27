@@ -1,0 +1,2748 @@
+openapi: 3.0.3
+info:
+  title: Himshravan V1 EWCPS API
+  version: 1.0.0
+  description: |-
+    API documentation for **Himshravan V1 — Electronic Warfare Command Post System (EWCPS)**.
+
+    Covers Authentication, Session Management, Device Discovery (device_info), the six telemetry subsystems (Direction Finding, Monitoring, Drone Detection, Cellular Active, Cellular Passive, Satellite Interception), Synchronization status & retry tracking, Event/Threat log with acknowledgement, Reports, and CSV Export.
+paths:
+  /api/auth/login/:
+    post:
+      operationId: auth_login_create
+      description: Login Returns JWT access/refresh tokens, role, and expiry.
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleTokenObtainPair'
+            examples:
+              Example:
+                value:
+                  username: admin
+                  password: Admin@123
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoleTokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoleTokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleTokenObtainPair'
+          description: ''
+  /api/auth/logout/:
+    post:
+      operationId: auth_logout_create
+      description: Logout Blacklists the supplied refresh token.
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Logout'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/auth/profile/:
+    get:
+      operationId: auth_profile_retrieve
+      description: Get the currently authenticated user's profile.
+      tags:
+      - Auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+  /api/auth/refresh/:
+    post:
+      operationId: auth_refresh_create
+      description: Refresh JWT access token using a valid refresh token.
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/device/register/:
+    post:
+      operationId: device_register_create
+      description: Register a new device.
+      tags:
+      - Device
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+            examples:
+              ExampleRequest:
+                value:
+                  device_type: NODE
+                  ip_address: 192.168.1.100
+                  node_id: node-001
+                  node_name: Alpha Node
+                  heartbeat_status: ACTIVE
+                  network_status: ONLINE
+                summary: Example Request
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+  /api/device/status/{node_id}/:
+    get:
+      operationId: device_status_retrieve
+      description: Get device status by node_id (doc §15.2).
+      parameters:
+      - in: path
+        name: node_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Device
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+  /api/devices/:
+    get:
+      operationId: devices_list
+      description: List all registered devices with optional filtering.
+      parameters:
+      - in: query
+        name: device_type
+        schema:
+          type: string
+        description: Filter by device type (NODE, DRONE, SATELLITE, PASSIVE_CELL,
+          ACTIVE_CELL)
+      - in: query
+        name: heartbeat_status
+        schema:
+          type: string
+        description: Filter by heartbeat status (ACTIVE, INACTIVE)
+      - in: query
+        name: network_status
+        schema:
+          type: string
+        description: Filter by network status (ONLINE, OFFLINE)
+      - in: query
+        name: node_id
+        schema:
+          type: string
+        description: Filter by node identifier
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search in node_name, node_id
+      tags:
+      - Device
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDeviceInfoList'
+          description: ''
+  /api/devices/{device_id}/:
+    get:
+      operationId: devices_retrieve
+      description: Retrieve a single device by its UUID.
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: UUID of the device
+        required: true
+      tags:
+      - Device
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+  /api/devices/{device_id}/delete/:
+    delete:
+      operationId: devices_delete_destroy
+      description: Delete a device by its UUID.
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: UUID of the device
+        required: true
+      tags:
+      - Device
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+  /api/devices/{device_id}/update/:
+    put:
+      operationId: devices_update_update
+      description: Update an existing device.
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: UUID of the device
+        required: true
+      tags:
+      - Device
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceInfo'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+    patch:
+      operationId: devices_update_partial_update
+      description: Update an existing device.
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: UUID of the device
+        required: true
+      tags:
+      - Device
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceInfo'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceInfo'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceInfo'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+          description: ''
+  /api/events/:
+    get:
+      operationId: events_list
+      description: List events with optional filters (doc §21.5).
+      parameters:
+      - in: query
+        name: acknowledged
+        schema:
+          type: string
+        description: true/false
+      - in: query
+        name: event_type
+        schema:
+          type: string
+        description: Specific event type
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: Filter by session UUID
+      - in: query
+        name: severity
+        schema:
+          type: string
+        description: CRITICAL/HIGH/MEDIUM/LOW/INFORMATIONAL
+      - in: query
+        name: subsystem_type
+        schema:
+          type: string
+        description: DF/MONITORING/DRONE/SATELLITE/...
+      tags:
+      - events
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEventLogList'
+          description: ''
+  /api/events/acknowledge/:
+    post:
+      operationId: events_acknowledge_create
+      description: Acknowledge an event (doc §21.6).
+      tags:
+      - events
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeEvent'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeEvent'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeEvent'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventLog'
+          description: ''
+  /api/export/csv/:
+    post:
+      operationId: export_csv_create
+      description: CSV Export (doc §18.2). Writes a CSV under EXPORTS_DIR and updates
+        sync_status.
+      tags:
+      - export
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+            examples:
+              Example:
+                value:
+                  session_id: e9bcfae2-4489-44a8-b53d-11aa22bb33cc
+                  module: DRONE
+                  selected_fields:
+                  - drone_id
+                  - drone_status
+                  - drone_latitude
+                  - drone_longitude
+                  destination_ip: 192.168.20.10
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/heartbeat/check/:
+    post:
+      operationId: heartbeat_check_create
+      description: Check heartbeat of a node by IP address.
+      tags:
+      - heartbeat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/notifications/:
+    get:
+      operationId: notifications_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /api/notifications/{notification_id}/:
+    get:
+      operationId: notifications_retrieve
+      description: Retrieve a single notification by its UUID.
+      parameters:
+      - in: path
+        name: notification_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: notification_id
+        schema:
+          type: string
+        description: UUID of the notification
+        required: true
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/notifications/{notification_id}/read/:
+    post:
+      operationId: notifications_read_create
+      description: Mark a notification as read.
+      parameters:
+      - in: path
+        name: notification_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: notification_id
+        schema:
+          type: string
+        description: UUID of the notification
+        required: true
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/notifications/mark-all-read/:
+    post:
+      operationId: notifications_mark_all_read_create
+      description: Mark all notifications as read. Optionally filter by category.
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+        description: Filter by category
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/analysis/:
+    get:
+      operationId: reports_analysis_retrieve
+      description: Analytical report — aggregates such as min/max/avg signal_strength
+        or snr (doc §11).
+      parameters:
+      - in: query
+        name: module
+        schema:
+          type: string
+        description: DF/MONITORING/DRONE/CELLULAR_ACTIVE/CELLULAR_PASSIVE/SATELLITE
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: Filter by session UUID
+      tags:
+      - reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/statistical/:
+    get:
+      operationId: reports_statistical_retrieve
+      description: Statistical report — counts per subsystem (doc §11).
+      parameters:
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: Filter by session UUID
+      tags:
+      - reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/session/{session_id}/:
+    get:
+      operationId: session_retrieve
+      description: Retrieve a single session by its UUID.
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: UUID of the session
+        required: true
+      tags:
+      - Session
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+          description: ''
+  /api/session/create/:
+    post:
+      operationId: session_create_create
+      description: Create a new telemetry session.
+      tags:
+      - Session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionDocsRequest'
+            examples:
+              ExampleRequest:
+                value:
+                  session_name: test_lf
+                  operation_mode: LF
+                  node_id: '9'
+                  node_lat: 18.506145
+                  node_long: 73.856589
+                summary: Example Request
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateSessionDocsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateSessionDocsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+          description: ''
+  /api/session/status/:
+    get:
+      operationId: session_status_retrieve
+      description: Get the latest active session, or a specific session if session_id
+        is provided (doc §11).
+      parameters:
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: Optional UUID of a specific session
+      tags:
+      - Session
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+          description: ''
+  /api/session/stop/:
+    post:
+      operationId: session_stop_create
+      description: Stop an active telemetry session.
+      tags:
+      - Session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopSession'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StopSession'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StopSession'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+          description: ''
+  /api/sessions/:
+    get:
+      operationId: sessions_list
+      description: List telemetry sessions with optional filtering.
+      parameters:
+      - in: query
+        name: date_from
+        schema:
+          type: string
+        description: Filter by start time from (ISO 8601 datetime)
+      - in: query
+        name: date_to
+        schema:
+          type: string
+        description: Filter by start time to (ISO 8601 datetime)
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search in session_name, remarks, cyronics_ip, cognizant_ip, session_type
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: UUID of the session
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by session status (e.g., RUNNING, STOPPED, CREATED)
+      tags:
+      - Session
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSessionListResponseList'
+          description: ''
+  /api/sessions/{session_id}/delete/:
+    delete:
+      operationId: sessions_delete_destroy
+      description: Delete a session by its UUID.
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: UUID of the session
+        required: true
+      tags:
+      - Session
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+          description: ''
+  /api/sync/start/:
+    post:
+      operationId: sync_start_create
+      description: Start synchronization for a (session, subsystem, device) triple
+      tags:
+      - sync
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncStart'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SyncStart'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SyncStart'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/:
+    get:
+      operationId: sync_status_list
+      description: Generic sync status — list latest per (subsystem, device).
+      parameters:
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: Filter by session UUID
+      - in: query
+        name: subsystem_type
+        schema:
+          type: string
+        description: DF/MONITORING/DRONE/...
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/active-cellular/{active_cellular_id}/:
+    get:
+      operationId: sync_status_active_cellular_retrieve
+      description: Get sync status by active_cellular_id.
+      parameters:
+      - in: path
+        name: active_cellular_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/drone/{drone_id}/:
+    get:
+      operationId: sync_status_drone_retrieve
+      description: Get sync status by drone_id.
+      parameters:
+      - in: path
+        name: drone_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/node/{node_id}/:
+    get:
+      operationId: sync_status_node_retrieve
+      description: Get sync status by node_id.
+      parameters:
+      - in: path
+        name: node_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/passive-cellular/{passive_cellular_id}/:
+    get:
+      operationId: sync_status_passive_cellular_retrieve
+      description: Get sync status by passive_cellular_id.
+      parameters:
+      - in: path
+        name: passive_cellular_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/sync/status/satellite/{satellite_id}/:
+    get:
+      operationId: sync_status_satellite_retrieve
+      description: Get sync status by satellite_id.
+      parameters:
+      - in: path
+        name: satellite_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - sync
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDetail'
+          description: ''
+  /api/telemetry/cellular-active/:
+    post:
+      operationId: telemetry_cellular_active_create
+      description: Store Cellular Active telemetry sample (doc §16.7).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CellularActiveTelemetryV1'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CellularActiveTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CellularActiveTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CellularActiveTelemetryV1'
+          description: ''
+  /api/telemetry/cellular-active/{active_cellular_id}/:
+    get:
+      operationId: telemetry_cellular_active_list
+      description: Fetch Cellular Active telemetry by active_cellular_id (doc §16.8).
+      parameters:
+      - in: path
+        name: active_cellular_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CellularActiveTelemetryV1'
+          description: ''
+  /api/telemetry/cellular-passive/:
+    post:
+      operationId: telemetry_cellular_passive_create
+      description: Store Cellular Passive telemetry sample (doc §16.9).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CellularPassiveTelemetryV1'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CellularPassiveTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CellularPassiveTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CellularPassiveTelemetryV1'
+          description: ''
+  /api/telemetry/cellular-passive/{passive_cellular_id}/:
+    get:
+      operationId: telemetry_cellular_passive_list
+      description: Fetch Cellular Passive telemetry by passive_cellular_id (doc §16.10).
+      parameters:
+      - in: path
+        name: passive_cellular_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CellularPassiveTelemetryV1'
+          description: ''
+  /api/telemetry/df/:
+    post:
+      operationId: telemetry_df_create
+      description: Store DF telemetry sample (doc §16.1).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DFTelemetryV1'
+            examples:
+              Example:
+                value:
+                  session_id: e9bcfae2-4489-44a8-b53d-11aa22bb33cc
+                  node_id: DF_NODE_001
+                  conf_score: '-'
+                  x: 955.81
+                  y: -82.98
+                  snr: 16.77
+                  bandwidth_3dbm: 17.09
+                  occupied_bandwidth: 92.81
+                  sinad: 16.86
+                  thd: 0
+                  protocol: GSM
+                  band: GMSK
+                  symbol_rate: 270.833K
+                  timestamp: '2026-02-25T16:04:29Z'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DFTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DFTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DFTelemetryV1'
+          description: ''
+  /api/telemetry/df/{node_id}/:
+    get:
+      operationId: telemetry_df_list
+      description: Fetch DF telemetry by node_id (doc §16.2).
+      parameters:
+      - in: path
+        name: node_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DFTelemetryV1'
+          description: ''
+  /api/telemetry/drone/:
+    post:
+      operationId: telemetry_drone_create
+      description: Store Drone telemetry sample (doc §16.5).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DroneTelemetryV1'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DroneTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DroneTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DroneTelemetryV1'
+          description: ''
+  /api/telemetry/drone/{drone_id}/:
+    get:
+      operationId: telemetry_drone_list
+      description: Fetch Drone telemetry by drone_id (doc §16.6).
+      parameters:
+      - in: path
+        name: drone_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DroneTelemetryV1'
+          description: ''
+  /api/telemetry/master/:
+    get:
+      operationId: telemetry_master_list
+      description: Fetch paginated master telemetry data for a session.
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Alias for page_size
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: 'Page number (default: 1)'
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+        description: 'Number of records per page (default: 20)'
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: UUID of the session (optional, uses latest active if omitted)
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MasterTelemetry'
+          description: ''
+  /api/telemetry/monitoring/:
+    post:
+      operationId: telemetry_monitoring_create
+      description: Store Monitoring telemetry sample (doc §16.3).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MonitoringTelemetryV1'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MonitoringTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MonitoringTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitoringTelemetryV1'
+          description: ''
+  /api/telemetry/monitoring/{node_id}/:
+    get:
+      operationId: telemetry_monitoring_list
+      description: Fetch Monitoring telemetry by node_id (doc §16.4).
+      parameters:
+      - in: path
+        name: node_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MonitoringTelemetryV1'
+          description: ''
+  /api/telemetry/node/:
+    get:
+      operationId: telemetry_node_retrieve
+      description: Fetch paginated connected node telemetry data for a session.
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Alias for page_size
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: 'Page number (default: 1)'
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+        description: 'Number of records per page (default: 20)'
+      - in: query
+        name: session_id
+        schema:
+          type: string
+        description: UUID of the session (optional, uses latest active if omitted)
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectedNodesResponse'
+          description: ''
+  /api/telemetry/satellite/:
+    post:
+      operationId: telemetry_satellite_create
+      description: Store Satellite Interception telemetry sample (doc §16.11).
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SatelliteTelemetryV1'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SatelliteTelemetryV1'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SatelliteTelemetryV1'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SatelliteTelemetryV1'
+          description: ''
+  /api/telemetry/satellite/{satellite_id}/:
+    get:
+      operationId: telemetry_satellite_list
+      description: Fetch Satellite telemetry by satellite_id (doc §16.12).
+      parameters:
+      - in: path
+        name: satellite_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - telemetry
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SatelliteTelemetryV1'
+          description: ''
+  /api/telemetry/topology/:
+    post:
+      operationId: telemetry_topology_create
+      description: Store one master and multiple slave nodes from the third-party
+        discovery script output.
+      tags:
+      - telemetry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryTopologyIngest'
+            examples:
+              MasterWithSlaveNodes:
+                value:
+                  session_id: e9bcfae2-4489-44a8-b53d-11aa22bb33cc
+                  device_type: DRONE
+                  source_ip: 192.168.0.10
+                  master:
+                    latitude: 18.4404421
+                    longitude: 74.3201593
+                    bearing: 0
+                    color: '#23BF08'
+                  nodes:
+                  - node_id: '6'
+                    node_name: quasar
+                    ip_address: 192.168.0.6
+                    node_status: online
+                summary: Master with slave nodes
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TelemetryTopologyIngest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TelemetryTopologyIngest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+components:
+  schemas:
+    AcknowledgeEvent:
+      type: object
+      properties:
+        event_id:
+          type: integer
+        acknowledged_by:
+          type: string
+          default: ''
+          maxLength: 150
+      required:
+      - event_id
+    BlankEnum:
+      enum:
+      - ''
+    CellularActiveTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        active_cellular_id:
+          type: string
+          maxLength: 100
+        imsi:
+          type: string
+          maxLength: 100
+        imei:
+          type: string
+          maxLength: 100
+        operator_name:
+          type: string
+          maxLength: 255
+        signal_strength_dbm:
+          type: number
+          format: double
+          nullable: true
+        frequency_mhz:
+          type: number
+          format: double
+          nullable: true
+        bandwidth_mhz:
+          type: number
+          format: double
+          nullable: true
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - active_cellular_id
+      - created_at
+      - id
+    CellularPassiveTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        passive_cellular_id:
+          type: string
+          maxLength: 100
+        protocol:
+          type: string
+          maxLength: 100
+        signal_strength_dbm:
+          type: number
+          format: double
+          nullable: true
+        frequency_mhz:
+          type: number
+          format: double
+          nullable: true
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - created_at
+      - id
+      - passive_cellular_id
+    ConnectedNodesResponse:
+      type: object
+      properties:
+        master:
+          $ref: '#/components/schemas/MasterPosition'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeDetail'
+      required:
+      - master
+      - nodes
+    CreateSessionDocsRequest:
+      type: object
+      properties:
+        session_name:
+          type: string
+          maxLength: 255
+        operation_mode:
+          type: string
+          maxLength: 50
+        node_id:
+          type: string
+          maxLength: 100
+        node_lat:
+          type: number
+          format: double
+        node_long:
+          type: number
+          format: double
+      required:
+      - node_id
+      - node_lat
+      - node_long
+      - operation_mode
+      - session_name
+    DFTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        node_id:
+          type: string
+          maxLength: 100
+        conf_score:
+          type: string
+          maxLength: 100
+        x:
+          type: number
+          format: double
+          nullable: true
+        y:
+          type: number
+          format: double
+          nullable: true
+        bw:
+          type: string
+          maxLength: 100
+        snr:
+          type: number
+          format: double
+          nullable: true
+        bandwidth_3dbm:
+          type: number
+          format: double
+          nullable: true
+        occupied_bandwidth:
+          type: number
+          format: double
+          nullable: true
+        sinad:
+          type: number
+          format: double
+          nullable: true
+        thd:
+          type: number
+          format: double
+          nullable: true
+        protocol:
+          type: string
+          maxLength: 100
+        band:
+          type: string
+          maxLength: 100
+        symbol_rate:
+          type: string
+          maxLength: 100
+      required:
+      - created_at
+      - id
+      - node_id
+    DeviceInfo:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          readOnly: true
+        device_type:
+          $ref: '#/components/schemas/DeviceInfoDeviceTypeEnum'
+        ip_address:
+          type: string
+          nullable: true
+        node_id:
+          type: string
+          maxLength: 100
+        node_name:
+          type: string
+          maxLength: 255
+        heartbeat_status:
+          $ref: '#/components/schemas/HeartbeatStatusEnum'
+        network_status:
+          $ref: '#/components/schemas/NetworkStatusEnum'
+        telemetry_timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - device_id
+      - updated_at
+    DeviceInfoDeviceTypeEnum:
+      enum:
+      - NODE
+      - DRONE
+      - SATELLITE
+      - PASSIVE_CELL
+      - ACTIVE_CELL
+      type: string
+      description: |-
+        * `NODE` - Node
+        * `DRONE` - Drone
+        * `SATELLITE` - Satellite
+        * `PASSIVE_CELL` - Passive Cell
+        * `ACTIVE_CELL` - Active Cell
+    DroneTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        drone_id:
+          type: string
+          maxLength: 100
+        drone_serial_number:
+          type: integer
+          nullable: true
+        demodulation_color:
+          type: string
+          maxLength: 50
+        drone_status:
+          type: string
+          maxLength: 50
+        drone_latitude:
+          type: number
+          format: double
+          nullable: true
+        drone_longitude:
+          type: number
+          format: double
+          nullable: true
+        drone_altitude:
+          type: number
+          format: double
+          nullable: true
+        home_latitude:
+          type: number
+          format: double
+          nullable: true
+        home_longitude:
+          type: number
+          format: double
+          nullable: true
+        operator_latitude:
+          type: number
+          format: double
+          nullable: true
+        operator_longitude:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - created_at
+      - drone_id
+      - id
+    EventLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+        subsystem_type:
+          $ref: '#/components/schemas/EventLogSubsystemTypeEnum'
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+        severity_color:
+          type: string
+          readOnly: true
+        event_type:
+          $ref: '#/components/schemas/EventTypeEnum'
+        device_reference_id:
+          type: string
+          maxLength: 100
+        message:
+          type: string
+        is_acknowledged:
+          type: boolean
+          readOnly: true
+        acknowledged_by:
+          type: string
+          readOnly: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - acknowledged_at
+      - acknowledged_by
+      - created_at
+      - id
+      - is_acknowledged
+      - severity_color
+    EventLogSubsystemTypeEnum:
+      enum:
+      - DF
+      - MONITORING
+      - DRONE
+      - SATELLITE
+      - PASSIVE_CELLULAR
+      - ACTIVE_CELLULAR
+      - SYSTEM
+      type: string
+      description: |-
+        * `DF` - Direction Finding
+        * `MONITORING` - Monitoring
+        * `DRONE` - Drone Detection
+        * `SATELLITE` - Satellite
+        * `PASSIVE_CELLULAR` - Passive Cellular
+        * `ACTIVE_CELLULAR` - Active Cellular
+        * `SYSTEM` - System
+    EventTypeEnum:
+      enum:
+      - RF_THREAT
+      - DRONE_THREAT
+      - COMMUNICATION_LOSS
+      - SYNC_FAILURE
+      - FREQUENCY_VIOLATION
+      - FORBIDDEN_SECTOR
+      - NODE_FAILURE
+      - CALIBRATION_FAILURE
+      - INFO
+      type: string
+      description: |-
+        * `RF_THREAT` - RF Threat
+        * `DRONE_THREAT` - Drone Threat
+        * `COMMUNICATION_LOSS` - Communication Loss
+        * `SYNC_FAILURE` - Synchronization Failure
+        * `FREQUENCY_VIOLATION` - Frequency Violation
+        * `FORBIDDEN_SECTOR` - Forbidden Sector Alert
+        * `NODE_FAILURE` - Node Failure
+        * `CALIBRATION_FAILURE` - Calibration Failure
+        * `INFO` - Informational
+    Heartbeat:
+      type: object
+      properties:
+        ip_address:
+          type: string
+          default: 192.168.1.1
+        port:
+          type: integer
+          maximum: 65535
+          minimum: 1
+        timeout:
+          type: number
+          format: double
+          maximum: 10
+          minimum: 0.1
+          default: 1.0
+    HeartbeatStatusEnum:
+      enum:
+      - ACTIVE
+      - INACTIVE
+      type: string
+      description: |-
+        * `ACTIVE` - Active
+        * `INACTIVE` - Inactive
+    Logout:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          default: ''
+    MasterPosition:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        bearing:
+          type: number
+          format: double
+        color:
+          type: string
+      required:
+      - bearing
+      - color
+      - latitude
+      - longitude
+    MasterTelemetry:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        node_id:
+          type: string
+          maxLength: 100
+        node_name:
+          type: string
+          maxLength: 255
+        ip_address:
+          type: string
+          nullable: true
+        operating_status:
+          type: string
+          maxLength: 50
+        status:
+          type: string
+          maxLength: 50
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        altitude:
+          type: number
+          format: double
+          nullable: true
+        bearing:
+          type: number
+          format: double
+          nullable: true
+        use:
+          type: string
+          maxLength: 100
+        color:
+          type: string
+          maxLength: 50
+        connection_status:
+          type: string
+          maxLength: 50
+        allow_connection:
+          type: boolean
+        logs_status:
+          type: boolean
+        aoa:
+          type: number
+          format: double
+          nullable: true
+        show_avg:
+          type: boolean
+        calibration_status:
+          type: string
+          maxLength: 50
+        antenna_selection:
+          type: string
+          maxLength: 50
+        y_max:
+          type: number
+          format: double
+          nullable: true
+        y_min:
+          type: number
+          format: double
+          nullable: true
+        polarradius:
+          type: number
+          format: double
+          nullable: true
+        sector_start:
+          type: number
+          format: double
+          nullable: true
+        sector_stop:
+          type: number
+          format: double
+          nullable: true
+        cpu_usage:
+          type: number
+          format: double
+        memory_usage:
+          type: number
+          format: double
+        disk_usage:
+          type: number
+          format: double
+        network_status:
+          type: string
+          maxLength: 50
+        heartbeat_status:
+          type: boolean
+        telemetry_timestamp:
+          type: string
+          format: date-time
+      required:
+      - id
+      - node_id
+    MonitoringTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        node_id:
+          type: string
+          maxLength: 100
+        center_frequency_hz:
+          type: integer
+          nullable: true
+        threshold_dbm:
+          type: number
+          format: double
+          nullable: true
+        freq_mhz:
+          type: number
+          format: double
+          nullable: true
+        power_dbm:
+          type: number
+          format: double
+          nullable: true
+        protocol:
+          type: string
+          maxLength: 100
+        modulation:
+          type: string
+          maxLength: 100
+        bandwidth_3dbm_khz:
+          type: number
+          format: double
+          nullable: true
+        occupied_bandwidth_khz:
+          type: number
+          format: double
+          nullable: true
+        snr:
+          type: number
+          format: double
+          nullable: true
+        sinad:
+          type: number
+          format: double
+          nullable: true
+        thd:
+          type: number
+          format: double
+          nullable: true
+        symbol_rate:
+          type: string
+          maxLength: 100
+      required:
+      - created_at
+      - id
+      - node_id
+    NetworkStatusEnum:
+      enum:
+      - ONLINE
+      - OFFLINE
+      type: string
+      description: |-
+        * `ONLINE` - Online
+        * `OFFLINE` - Offline
+    NodeDetail:
+      type: object
+      properties:
+        node_id:
+          type: string
+          maxLength: 100
+        node_name:
+          type: string
+          maxLength: 255
+        ip_address:
+          type: string
+          nullable: true
+        node_status:
+          type: string
+          maxLength: 50
+        operating_status:
+          type: string
+          maxLength: 50
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - node_id
+    Notification:
+      type: object
+      properties:
+        notification_id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        message:
+          type: string
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        triggered_by:
+          type: string
+          maxLength: 150
+        created_at:
+          type: string
+          nullable: true
+          readOnly: true
+        read_at:
+          type: string
+          nullable: true
+          readOnly: true
+      required:
+      - created_at
+      - notification_id
+      - read_at
+      - title
+    PaginatedDeviceInfoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceInfo'
+    PaginatedEventLogList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventLog'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    PaginatedSessionListResponseList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionListResponse'
+    PatchedDeviceInfo:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          readOnly: true
+        device_type:
+          $ref: '#/components/schemas/DeviceInfoDeviceTypeEnum'
+        ip_address:
+          type: string
+          nullable: true
+        node_id:
+          type: string
+          maxLength: 100
+        node_name:
+          type: string
+          maxLength: 255
+        heartbeat_status:
+          $ref: '#/components/schemas/HeartbeatStatusEnum'
+        network_status:
+          $ref: '#/components/schemas/NetworkStatusEnum'
+        telemetry_timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PriorityEnum:
+      enum:
+      - LOW
+      - MEDIUM
+      - HIGH
+      - CRITICAL
+      type: string
+      description: |-
+        * `LOW` - Low
+        * `MEDIUM` - Medium
+        * `HIGH` - High
+        * `CRITICAL` - Critical
+    RoleEnum:
+      enum:
+      - SUPER_ADMIN
+      - COMMAND_OPERATOR
+      - FIELD_OPERATOR
+      type: string
+      description: |-
+        * `SUPER_ADMIN` - Super Admin
+        * `COMMAND_OPERATOR` - Command Operator
+        * `FIELD_OPERATOR` - Field Operator
+    RoleTokenObtainPair:
+      type: object
+      description: Login serializer matching doc §13.1 response shape.
+      properties:
+        username:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - password
+      - username
+    SatelliteTelemetryV1:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        satellite_id:
+          type: string
+          maxLength: 100
+        satellite_name:
+          type: string
+          maxLength: 255
+        downlink_frequency_ghz:
+          type: number
+          format: double
+          nullable: true
+        uplink_frequency_ghz:
+          type: number
+          format: double
+          nullable: true
+        snr:
+          type: number
+          format: double
+          nullable: true
+        modulation:
+          type: string
+          maxLength: 100
+        protocol:
+          type: string
+          maxLength: 100
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - created_at
+      - id
+      - satellite_id
+    SessionDetailResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          default: SUCCESS
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/TelemetrySession'
+      required:
+      - message
+    SessionListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          default: SUCCESS
+        count:
+          type: integer
+        total_pages:
+          type: integer
+        current_page:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelemetrySession'
+      required:
+      - count
+      - current_page
+      - results
+      - total_pages
+    SeverityEnum:
+      enum:
+      - CRITICAL
+      - HIGH
+      - MEDIUM
+      - LOW
+      - INFORMATIONAL
+      type: string
+      description: |-
+        * `CRITICAL` - Critical
+        * `HIGH` - High
+        * `MEDIUM` - Medium
+        * `LOW` - Low
+        * `INFORMATIONAL` - Informational
+    StatusEnum:
+      enum:
+      - CREATED
+      - RUNNING
+      - STOPPED
+      type: string
+      description: |-
+        * `CREATED` - Created
+        * `RUNNING` - Running
+        * `STOPPED` - Stopped
+    StopSession:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        stop_reason:
+          type: string
+          default: ''
+          maxLength: 255
+      required:
+      - session_id
+    SyncStart:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        subsystem_type:
+          oneOf:
+          - $ref: '#/components/schemas/SyncStartSubsystemTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        device_reference_id:
+          type: string
+          default: ''
+        polling_interval:
+          type: integer
+          default: 10
+        destination_ip:
+          type: string
+          nullable: true
+      required:
+      - session_id
+    SyncStartSubsystemTypeEnum:
+      enum:
+      - DF
+      - MONITORING
+      - DRONE
+      - SATELLITE
+      - PASSIVE_CELLULAR
+      - ACTIVE_CELLULAR
+      type: string
+      description: |-
+        * `DF` - DF
+        * `MONITORING` - MONITORING
+        * `DRONE` - DRONE
+        * `SATELLITE` - SATELLITE
+        * `PASSIVE_CELLULAR` - PASSIVE_CELLULAR
+        * `ACTIVE_CELLULAR` - ACTIVE_CELLULAR
+    SyncStatusDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session_id:
+          type: string
+          format: uuid
+          readOnly: true
+        subsystem_type:
+          type: string
+          maxLength: 100
+        device_reference_id:
+          type: string
+          description: node_id / drone_id / satellite_id / passive_cellular_id / active_cellular_id
+          maxLength: 100
+        node_id:
+          type: string
+          maxLength: 100
+        sync_status:
+          $ref: '#/components/schemas/SyncStatusEnum'
+        retry_count:
+          type: integer
+        polling_interval:
+          type: integer
+          description: Polling interval (seconds)
+        last_sync_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        last_retry_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        last_failure_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        last_error_message:
+          type: string
+        exported_records:
+          type: integer
+        csv_file_name:
+          type: string
+          maxLength: 500
+        destination_ip:
+          type: string
+          nullable: true
+        transfer_status:
+          type: string
+          maxLength: 50
+        remarks:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - id
+      - session_id
+      - updated_at
+    SyncStatusEnum:
+      enum:
+      - PENDING
+      - IN_PROGRESS
+      - COMPLETED
+      - FAILED
+      - PENDING_RETRY
+      - RETRYING
+      - FAILED_MAX_RETRIES
+      - SENT_ON_RETRY
+      - SUCCESS
+      type: string
+      description: |-
+        * `PENDING` - Pending
+        * `IN_PROGRESS` - In Progress
+        * `COMPLETED` - Completed
+        * `FAILED` - Failed
+        * `PENDING_RETRY` - Pending Retry
+        * `RETRYING` - Retrying
+        * `FAILED_MAX_RETRIES` - Failed (Max Retries)
+        * `SENT_ON_RETRY` - Sent On Retry
+        * `SUCCESS` - Success
+    TelemetrySession:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          readOnly: true
+        session_name:
+          type: string
+          maxLength: 255
+        operation_mode:
+          type: string
+          maxLength: 50
+        cyronics_ip:
+          type: string
+          nullable: true
+        cognizant_ip:
+          type: string
+          nullable: true
+        monitoring_system_ip:
+          type: string
+          nullable: true
+        df_system_ip:
+          type: string
+          nullable: true
+        drone_detector_ip:
+          type: string
+          nullable: true
+        cellular_active_ip:
+          type: string
+          nullable: true
+        cellular_passive_ip:
+          type: string
+          nullable: true
+        satellite_interception_ip:
+          type: string
+          nullable: true
+        session_type:
+          type: string
+          maxLength: 50
+        node_id:
+          type: string
+          maxLength: 100
+        node_lat:
+          type: number
+          format: double
+          nullable: true
+        node_long:
+          type: number
+          format: double
+          nullable: true
+        remarks:
+          type: string
+        export_status:
+          type: string
+          maxLength: 50
+        polling_interval:
+          type: integer
+          description: Polling interval in seconds
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        start_time:
+          type: string
+          nullable: true
+          readOnly: true
+        stop_time:
+          type: string
+          nullable: true
+          readOnly: true
+        stop_reason:
+          type: string
+          maxLength: 255
+        last_sync_time:
+          type: string
+          nullable: true
+          readOnly: true
+        created_by:
+          type: string
+          maxLength: 150
+      required:
+      - last_sync_time
+      - session_id
+      - session_name
+      - start_time
+      - stop_time
+    TelemetryTopologyIngest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        device_type:
+          allOf:
+          - $ref: '#/components/schemas/TelemetryTopologyIngestDeviceTypeEnum'
+          default: NODE
+        source_ip:
+          type: string
+          nullable: true
+        master:
+          type: object
+          additionalProperties: {}
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - master
+    TelemetryTopologyIngestDeviceTypeEnum:
+      enum:
+      - NODE
+      - DRONE
+      - DF
+      - MONITORING
+      - SATELLITE
+      - PASSIVE_CELL
+      - ACTIVE_CELL
+      type: string
+      description: |-
+        * `NODE` - NODE
+        * `DRONE` - DRONE
+        * `DF` - DF
+        * `MONITORING` - MONITORING
+        * `SATELLITE` - SATELLITE
+        * `PASSIVE_CELL` - PASSIVE_CELL
+        * `ACTIVE_CELL` - ACTIVE_CELL
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          readOnly: true
+          description: |-
+            User role determining access permissions
+
+            * `SUPER_ADMIN` - Super Admin
+            * `COMMAND_OPERATOR` - Command Operator
+            * `FIELD_OPERATOR` - Field Operator
+        assigned_node_id:
+          type: string
+          description: Optional node binding for FIELD_OPERATOR role
+          maxLength: 100
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - role
+      - updated_at
+      - username
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

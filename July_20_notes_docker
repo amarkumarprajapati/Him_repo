@@ -1,0 +1,122 @@
+Docket execution steps:
+-----------------------
+I. Front-end code:
+
+//only frontend need to build,
+docker compose build frontend
+
+cd /home/dell/Documents/July_9/HIMSHRAVAN
+sudo docker-compose up -d --build
+
+sudo docker compose exec backend python manage.py migrate
+sudo docker compose exec backend python manage.py createsuperuser
+
+docker compose ps
+docker compose down
+docker compose restart
+
+Backend code:
+
+cd /home/dell/Documents/July_9/HIMSHRAVAN
+sudo docker-compose up -d --build
+
+sudo docker compose exec backend python manage.py migrate
+sudo docker compose exec backend python manage.py createsuperuser
+
+
+docker compose exec backend python manage.py add_dummy_devices
+
+
+Verify the execuable build:
+
+
+
+
+
+II. Docker image execution steps:
+
+mkdir -p device/logs device/cache device/staticfiles && cp ../HIMSHRAVAN/device/.env device/.env
+
+Make docker images to .tar file
+------------------------------
+docker save himshravan-frontend:latest -o himshravan-frontend.tar
+docker save himshravan-backend:latest -o himshravan-backend.tar
+docker save himshravan-db:latest -o himshravan-db.tar
+docker save maptiler/tileserver-gl:latest -o himshravan-maps.tar
+
+docker save himshravan-desktop-builder:latest -o himshravan-desktop-builder.tar # (Optional)
+
+
+loading to remote mechine:
+--------------------------
+# Load the database image
+docker load -i himshravan-db.tar
+# Load the backend image
+docker load -i himshravan-backend.tar
+# Load the frontend image
+docker load -i himshravan-frontend.tar
+
+$ docker compose up
+
+
+
+------------
+
+take backup of postgresql database from docker:
+------------------------------------------------
+docker exec -i himshravan-db pg_dump -U postgres himshravan > backup.sql
+
+docker exec -i himshravan-db psql -U postgres himshravan < backup.sql
+
+
+-------------
+
+ommand to run cellular satelleite info.py
+
+Got it. To make this work seamlessly inside Docker, I have gone ahead and updated the paths in cellular_satelliite_info.py to look for the files at /app/create_runtime_files/ (which is the path inside the container).
+
+Since the container doesn't automatically have access to your host machine's /home/dell/... folders, we first need to copy the files into it.
+
+Please run these two commands in your terminal (you can do this outside the virtual environment, just a normal terminal):
+
+1. Copy your test files from your host machine into the backend Docker container:
+
+bash
+docker cp /home/dell/Documents/July_21/create_runtime_files himshravan-backend:/app/
+2. Run the script inside the Docker container:
+
+bash
+docker exec -it himshravan-backend python scripts/cognent/cellular_satelliite_info.py
+This will launch the dashboard right there in your terminal, using the Docker environment which already has pandas and django fully installed!
+
+
+-----------
+
+. To check if the containers are currently up and running:
+
+bash
+docker compose ps
+2. To view the live logs for both scripts: For the Heartbeat monitor:
+
+bash
+docker logs -f himshravan-heartbeat
+For the Cellular Satellite monitor:
+
+bash
+docker logs -f himshravan-cellular-sat
+3. To see the actual Python processes running inside the containers: For the Heartbeat monitor:
+
+bash
+docker top himshravan-heartbeat
+For the Cellular Satellite monitor:
+
+bash
+docker top himshravan-cellular-sat
+\
+
+
+
+db access:
+----------
+docker exec -it himshravan-db psql -U postgres -d himshravan
+
