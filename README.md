@@ -66,9 +66,6 @@ docker build -t himshravan-frontend:latest ./next.config
 docker build -t himshravan-db:latest ./k8s/postgres
 ```
 
-
-
-
 ## 5. Push images to a registry
 
 Example with Docker Hub:
@@ -110,10 +107,3 @@ kubectl get svc -n himshravan
 - Mount persistent storage for PostgreSQL and application logs.
 - Use a private registry and image pull secrets.
 - Set the frontend API base URL through an environment variable or ingress host.
-
-
-<!-- start docker-UP -->
-
-sudo docker compose up -d
-
-<!-- build -->
