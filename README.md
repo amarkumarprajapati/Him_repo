@@ -117,3 +117,11 @@ kubectl get svc -n himshravan
 sudo docker compose up -d
 
 <!-- build -->
+
+sudo systemctl restart docker
+
+<!-- install Backend -->
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
