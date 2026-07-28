@@ -157,6 +157,24 @@ function createLabelIcon(id: string) {
   });
 }
 
+const nodeIconCache = new Map<string, L.DivIcon>();
+const labelIconCache = new Map<string, L.DivIcon>();
+
+function getOrCreateNodeIcon(type: NodeType, color: string, networkStatus?: string) {
+  const key = `${type}_${color}_${networkStatus || ""}`;
+  if (!nodeIconCache.has(key)) {
+    nodeIconCache.set(key, createNodeIcon(type, color, networkStatus));
+  }
+  return nodeIconCache.get(key)!;
+}
+
+function getOrCreateLabelIcon(id: string) {
+  if (!labelIconCache.has(id)) {
+    labelIconCache.set(id, createLabelIcon(id));
+  }
+  return labelIconCache.get(id)!;
+}
+
 function MapInstanceCapture({ onMap }: { onMap: (map: L.Map) => void }) {
   const map = useMap();
   useEffect(() => {
@@ -339,7 +357,20 @@ export default function TelemetryMap() {
 
   useEffect(() => {
     dispatch(fetchDevices());
+    const intervalId = setInterval(() => {
+      dispatch(fetchDevices());
+    }, 30000);
+    return () => clearInterval(intervalId);
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const selectedId = getNodeId(selectedNode.node);
+    const updated = displayNodes.find((n) => getNodeId(n) === selectedId);
+    if (updated && updated !== selectedNode.node) {
+      setSelectedNode((prev) => (prev ? { ...prev, node: updated } : null));
+    }
+  }, [displayNodes, selectedNode]);
 
   const hasNodes = displayNodes.length > 0;
 
@@ -375,7 +406,14 @@ export default function TelemetryMap() {
     () =>
       displayNodes.reduce(
         (acc, node) => {
-          acc[getNodeId(node)] = createNodeIcon(getNodeType(node.device_type), getNodeColor(node), node.network_status);
+          const id = getNodeId(node);
+          if (id) {
+            acc[id] = getOrCreateNodeIcon(
+              getNodeType(node.device_type),
+              getNodeColor(node),
+              node.network_status,
+            );
+          }
           return acc;
         },
         {} as Record<string, L.DivIcon>,
@@ -386,7 +424,10 @@ export default function TelemetryMap() {
     () =>
       displayNodes.reduce(
         (acc, node) => {
-          acc[getNodeId(node)] = createLabelIcon(getNodeId(node));
+          const id = getNodeId(node);
+          if (id) {
+            acc[id] = getOrCreateLabelIcon(id);
+          }
           return acc;
         },
         {} as Record<string, L.DivIcon>,
@@ -448,6 +489,14 @@ export default function TelemetryMap() {
     setSelectedNode(null);
   }, []);
 
+  const handleNodeClick = useCallback(
+    (node: MapNode, e: L.LeafletMouseEvent) => {
+      setAnalyticsNode(null);
+      setContextMenu(null);
+      showNodeDetails(node, e.originalEvent.clientX, e.originalEvent.clientY);
+    },
+    [showNodeDetails],
+  );
 
   const handleAnalyticsBack = useCallback(() => {
     setAnalyticsNode(null);
@@ -486,11 +535,7 @@ export default function TelemetryMap() {
             nodeIcons={nodeIcons}
             labelIcons={labelIcons}
             onRightClick={handleNodeRightClick}
-            onClick={(node, e) => {
-              setAnalyticsNode(null);
-              setContextMenu(null);
-              showNodeDetails(node, e.originalEvent.clientX, e.originalEvent.clientY);
-            }}
+            onClick={handleNodeClick}
           />
         </MapContainer>
 

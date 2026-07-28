@@ -72,16 +72,19 @@ export const VisibleNodes = memo(function VisibleNodes({
 
   return (
     <>
-      {visibleNodes?.map((node, index) => (
-        <MemoNodeMarker
-          key={`${getNodeId(node)}-${node.device_id}-${index}`}
-          node={node}
-          nodeIcon={nodeIcons[getNodeId(node)]}
-          labelIcon={labelIcons[getNodeId(node)]}
-          onRightClick={onRightClick}
-          onClick={onClick}
-        />
-      ))}
+      {visibleNodes?.map((node, index) => {
+        const id = getNodeId(node);
+        return (
+          <MemoNodeMarker
+            key={id || `node-${index}`}
+            node={node}
+            nodeIcon={nodeIcons[id]}
+            labelIcon={labelIcons[id]}
+            onRightClick={onRightClick}
+            onClick={onClick}
+          />
+        );
+      })}
     </>
   );
 });
