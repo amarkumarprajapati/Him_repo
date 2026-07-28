@@ -9,8 +9,10 @@ import {
 import {
   setAuthCookie,
   clearAuthCookie,
+  readAuthCookiePayload,
 } from '@/utils/auth-cookie';
 import { fetchDevices } from './devicesSlice';
+import type { PayloadAction } from '@reduxjs/toolkit';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -62,12 +64,42 @@ export const logoutUser = createAsyncThunk('auth/logout', async () => {
   return null;
 });
 
+export const restoreAuthSession = createAsyncThunk(
+  'auth/restoreSession',
+  async (_, { dispatch }) => {
+    const payload = readAuthCookiePayload();
+    if (!payload?.username || !payload?.role) {
+      clearAuthCookie();
+      return null;
+    }
+
+    if (payload.exp && payload.exp * 1000 <= Date.now()) {
+      clearAuthCookie();
+      return null;
+    }
+
+    const user: UserProfile = {
+      username: payload.username,
+      role: payload.role,
+      is_staff: payload.role === 'SUPER_ADMIN',
+      is_superuser: payload.role === 'SUPER_ADMIN',
+    };
+
+    dispatch(fetchDevices());
+    return user;
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
     clearError: (state) => {
       state.error = null;
+    },
+    setAuthenticatedUser: (state, action: PayloadAction<UserProfile | null>) => {
+      state.isAuthenticated = Boolean(action.payload);
+      state.user = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -88,9 +120,13 @@ const authSlice = createSlice({
       .addCase(logoutUser.fulfilled, (state) => {
         state.isAuthenticated = false;
         state.user = null;
+      })
+      .addCase(restoreAuthSession.fulfilled, (state, action) => {
+        state.isAuthenticated = Boolean(action.payload);
+        state.user = action.payload;
       });
   },
 });
 
-export const { clearError } = authSlice.actions;
+export const { clearError, setAuthenticatedUser } = authSlice.actions;
 export default authSlice.reducer;

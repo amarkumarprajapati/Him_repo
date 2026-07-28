@@ -78,7 +78,7 @@ export function TopHeader() {
 
   return (
     <header
-      className="h-[60px] flex items-center justify-between px-5 lg:px-8 bg-white dark:bg-[#1e293b]/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 shrink-0 transition-colors relative z-[7000]"
+      className="h-[60px] flex items-center justify-between px-5 lg:px-8 bg-white dark:bg-[#1e293b]/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 shrink-0 transition-colors relative z-[1000]"
     >
       <div className="flex items-center gap-3 min-w-0">
         {!isSidebarOpen && (

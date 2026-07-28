@@ -1,14 +1,12 @@
 'use client';
 
-import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppSelector } from '@/store/hooks';
-import { MapPin, Pencil, X, Check, RefreshCw, Upload, Wifi, WifiOff } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Antenna, Check, Drone, ExternalLink, Globe, MapPin, Orbit, Pencil, Radio, RadioTower, RefreshCw, Shield, Wifi, WifiOff, X } from 'lucide-react';
 import {
   listSensorLocations,
-  uploadSensorLocations,
-  updateSensorLocation,
+  updateDevice,
   type DeviceItem,
 } from '@/api/devices';
 import { showToast } from '@/utils/toast';
@@ -25,37 +23,114 @@ const DEVICE_TYPE_COLORS: Record<string, string> = {
   SATELLITE: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
 };
 
+const DEVICE_TYPE_META: Record<
+  string,
+  {
+    icon: typeof MapPin;
+    iconWrap: string;
+    iconColor: string;
+  }
+> = {
+  ACTIVE_CELL: {
+    icon: Antenna,
+    iconWrap: 'bg-emerald-500/12 border border-emerald-500/20',
+    iconColor: 'text-emerald-400',
+  },
+  PASSIVE_CELL: {
+    icon: RadioTower,
+    iconWrap: 'bg-rose-500/12 border border-rose-500/20',
+    iconColor: 'text-rose-400',
+  },
+  SATELLITE: {
+    icon: Orbit,
+    iconWrap: 'bg-violet-500/12 border border-violet-500/20',
+    iconColor: 'text-violet-400',
+  },
+  DRONE: {
+    icon: Drone,
+    iconWrap: 'bg-amber-500/12 border border-amber-500/20',
+    iconColor: 'text-amber-400',
+  },
+  DF: {
+    icon: Radio,
+    iconWrap: 'bg-sky-500/12 border border-sky-500/20',
+    iconColor: 'text-sky-400',
+  },
+  MONITORING_SENSOR: {
+    icon: Shield,
+    iconWrap: 'bg-cyan-500/12 border border-cyan-500/20',
+    iconColor: 'text-cyan-400',
+  },
+};
+
+const FALLBACK_DEVICE_META = {
+  icon: MapPin,
+  iconWrap: 'bg-slate-500/12 border border-slate-500/20',
+  iconColor: 'text-slate-400',
+};
+
+
+const COORD_EDIT_TYPES = new Set(['PASSIVE_CELL', 'ACTIVE_CELL', 'SATELLITE']);
+const STATION_EDIT_TYPES = new Set(['MONITORING_SENSOR', 'DRONE', 'DF']);
+
+function getDeviceMeta(deviceType: string) {
+  return DEVICE_TYPE_META[deviceType] ?? FALLBACK_DEVICE_META;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString();
+}
+
 interface EditState {
   deviceId: string;
+  deviceType: string;
+  deviceName: string;
+  networkStatus: string;
+  ip_address: string;
   latitude: string;
   longitude: string;
+  station_name: string;
   saving: boolean;
 }
 
 export default function SensorManagementPage() {
   const router = useRouter();
   const user = useAppSelector((state) => state.auth.user);
-
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize] = useState(10);
 
-  // Guard: Admin only
+  const isInitialLoading = loading && devices.length === 0;
+
+
   useEffect(() => {
     if (user && user.role !== 'SUPER_ADMIN') {
       router.replace('/map-view');
     }
   }, [user, router]);
 
-  const fetchDevices = async () => {
+  const fetchDevices = async (page = currentPage) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await listSensorLocations();
-      setDevices(res.data ?? []);
+      const res = await listSensorLocations(page, pageSize);
+      const deviceData = res.results ?? res.data ?? [];
+      setDevices(deviceData);
+      setTotalPages(res.total_pages ?? 1);
+      setTotalCount(res.count ?? deviceData.length);
+      setCurrentPage(page);
     } catch {
       setError('Failed to load sensor devices.');
     } finally {
@@ -64,14 +139,28 @@ export default function SensorManagementPage() {
   };
 
   useEffect(() => {
-    fetchDevices();
+    fetchDevices(1);
   }, []);
+
+  useEffect(() => {
+    if (!edit) return;
+
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [edit]);
 
   const startEdit = (device: DeviceItem) => {
     setEdit({
       deviceId: device.device_id,
+      deviceType: device.device_type,
+      deviceName: device.node_name ?? device.station_name ?? device.device_type,
+      networkStatus: device.network_status ?? 'OFFLINE',
+      ip_address: device.ip_address ?? '',
       latitude: device.latitude != null ? String(device.latitude) : '',
       longitude: device.longitude != null ? String(device.longitude) : '',
+      station_name: device.station_name ?? '',
       saving: false,
     });
   };
@@ -80,61 +169,57 @@ export default function SensorManagementPage() {
 
   const saveEdit = async () => {
     if (!edit) return;
-    const lat = parseFloat(edit.latitude);
-    const lng = parseFloat(edit.longitude);
-    if (isNaN(lat) || lat < -90 || lat > 90) {
-      showToast.error('Latitude must be a number between -90 and 90.');
+    const isCoordType = COORD_EDIT_TYPES.has(edit.deviceType);
+    const isStationType = STATION_EDIT_TYPES.has(edit.deviceType);
+
+    if (!edit.ip_address.trim()) {
+      showToast.error('IP address is required.');
       return;
     }
-    if (isNaN(lng) || lng < -180 || lng > 180) {
-      showToast.error('Longitude must be a number between -180 and 180.');
-      return;
+
+    const payload: { ip_address?: string; latitude?: number; longitude?: number; station_name?: string } = {
+      ip_address: edit.ip_address.trim(),
+    };
+
+    if (isCoordType) {
+      const lat = parseFloat(edit.latitude);
+      const lng = parseFloat(edit.longitude);
+      if (!edit.latitude.trim() || isNaN(lat) || lat < -90 || lat > 90) {
+        showToast.error('Latitude is required and must be a number between -90 and 90.');
+        return;
+      }
+      if (!edit.longitude.trim() || isNaN(lng) || lng < -180 || lng > 180) {
+        showToast.error('Longitude is required and must be a number between -180 and 180.');
+        return;
+      }
+      payload.latitude = lat;
+      payload.longitude = lng;
+    } else if (isStationType) {
+      if (!edit.station_name.trim()) {
+        showToast.error('Station name is required.');
+        return;
+      }
+      payload.station_name = edit.station_name.trim();
     }
+
     setEdit((prev) => prev && { ...prev, saving: true });
     try {
-      await updateSensorLocation(edit.deviceId, { latitude: lat, longitude: lng });
-      showToast.success('Sensor location updated.');
+      await updateDevice(edit.deviceId, payload);
+      showToast.success('Device updated successfully.');
       setEdit(null);
-      await fetchDevices();
+      await fetchDevices(currentPage);
     } catch {
-      showToast.error('Failed to update sensor location.');
+      showToast.error('Failed to update device.');
       setEdit((prev) => prev && { ...prev, saving: false });
-    }
-  };
-
-  const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const response = await uploadSensorLocations(file);
-      const { updated_count, failed_count, errors } = response.data;
-
-      if (failed_count > 0) {
-        const firstError = errors[0]?.message ?? 'Some rows could not be processed.';
-        showToast.error(`Updated ${updated_count} row(s). ${failed_count} failed. ${firstError}`);
-      } else {
-        showToast.success(`Updated ${updated_count} sensor location row(s).`);
-      }
-
-      await fetchDevices();
-    } catch {
-      showToast.error('Failed to upload sensor location file.');
-    } finally {
-      setUploading(false);
-      event.target.value = '';
     }
   };
 
   if (user?.role !== 'SUPER_ADMIN') return null;
 
   return (
-    <div className="p-6 space-y-6 min-h-screen bg-slate-50 dark:bg-[#0f172a]">
+    <div className="flex flex-col h-screen p-6 gap-4 overflow-hidden bg-slate-50 dark:bg-[#0f172a]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
             <MapPin className="h-5 w-5 text-emerald-400" />
@@ -146,27 +231,19 @@ export default function SensorManagementPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={fetchDevices}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
       </div>
 
      
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <div className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {error}
         </div>
       )}
 
       {/* Loading skeleton */}
-      {loading && (
+      {isInitialLoading && (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 rounded-xl bg-slate-200 dark:bg-white/5 animate-pulse" />
@@ -175,154 +252,364 @@ export default function SensorManagementPage() {
       )}
 
       {/* Device table */}
-      {!loading && devices.length === 0 && !error && (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400 dark:text-slate-500">
-          <MapPin className="h-10 w-10 mb-3 opacity-30" />
-          <p className="text-sm">No sensor devices found.</p>
-        </div>
-      )}
-
-      {!loading && devices.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/8 bg-white dark:bg-[#1e293b]/60 shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-white/8 bg-slate-50 dark:bg-white/3">
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Device
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/8 bg-white dark:bg-[#1e293b]/60 shadow-sm">
+          {loading && devices.length > 0 && (
+            <div className="absolute inset-x-0 top-0 z-20 h-0.5 bg-emerald-500/80" />
+          )}
+          <div className="h-full overflow-auto">
+            <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-[#1e293b]">
+              <tr className="border-b border-slate-200 dark:border-white/8 bg-slate-50 dark:bg-[#1e293b]">
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
+                  Device Type
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Type
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
+                  Network Status
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Status
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
+                  Station Name
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
+                  IP Address
+                </th>
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
                   Latitude
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
                   Longitude
                 </th>
-                <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <th className="sticky top-0 bg-slate-50 px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-[#1e293b] dark:text-slate-400">
                   Action
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-              <AnimatePresence initial={false}>
-                {devices.map((device) => {
-                  const isEditing = edit?.deviceId === device.device_id;
-                  const typeLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type;
-                  const typeColor = DEVICE_TYPE_COLORS[device.device_type] ?? 'bg-slate-500/15 text-slate-400';
-                  const isOnline = device.network_status === 'ONLINE';
+              {!loading && devices.length === 0 && !error && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-20">
+                    <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                      <MapPin className="h-10 w-10 mb-3 opacity-30" />
+                      <p className="text-sm">No sensor devices found.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {devices.map((device) => {
+                const typeLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type;
+                const typeColor = DEVICE_TYPE_COLORS[device.device_type] ?? 'bg-slate-500/15 text-slate-400';
+                const isOnline = device.network_status === 'ONLINE';
+                const meta = getDeviceMeta(device.device_type);
+                const DeviceIcon = meta.icon;
 
-                  return (
-                    <motion.tr
-                      key={device.device_id}
-                      layout
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className={`transition-colors ${isEditing ? 'bg-emerald-500/5 dark:bg-emerald-500/8' : 'hover:bg-slate-50 dark:hover:bg-white/3'}`}
-                    >
-                      {/* Device name */}
+                return (
+                  <tr
+                    key={device.device_id}
+                    className="transition-colors hover:bg-slate-50 dark:hover:bg-white/3"
+                  >
+                      {/* Device type */}
                       <td className="px-5 py-3.5">
-                        <div className="font-medium text-slate-900 dark:text-white">
-                          {device.node_name ?? device.station_name ?? '—'}
+                        <div className="flex items-start gap-3 min-w-[220px]">
+                          <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${meta.iconWrap}`}>
+                            <DeviceIcon className={`h-4.5 w-4.5 ${meta.iconColor}`} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-900 dark:text-white truncate">{typeLabel}</div>
+                            <div className="text-xs text-slate-400 font-mono mt-0.5 break-all">
+                              {device.device_id}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-400 font-mono mt-0.5">
-                          {device.ip_address ?? String(device.device_id).slice(0, 8) + '…'}
-                        </div>
-                      </td>
-
-                      {/* Type badge */}
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${typeColor}`}>
-                          {typeLabel}
-                        </span>
                       </td>
 
                       {/* Network status */}
                       <td className="px-5 py-3.5">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${isOnline ? 'text-emerald-400' : 'text-slate-400'}`}>
                           {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                          {isOnline ? 'Online' : 'Offline'}
+                          {device.network_status ?? '—'}
                         </span>
+                      </td>
+
+                      {/* Station name */}
+                      <td className="px-5 py-3.5">
+                        <div className="min-w-[160px] text-sm font-medium text-slate-800 dark:text-slate-100">
+                          {device.station_name ?? '—'}
+                        </div>
+                      </td>
+
+                      {/* IP address */}
+                      <td className="px-5 py-3.5">
+                        <div className="min-w-[180px] font-mono text-slate-700 dark:text-slate-300 break-all">
+                          {device.ip_address ?? '—'}
+                        </div>
                       </td>
 
                       {/* Latitude */}
                       <td className="px-5 py-3.5">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="any"
-                            value={edit.latitude}
-                            onChange={(e) => setEdit((prev) => prev && { ...prev, latitude: e.target.value })}
-                            className="w-32 px-2 py-1.5 rounded-lg text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                            placeholder="e.g. 19.0760"
-                          />
-                        ) : (
-                          <span className="font-mono text-slate-700 dark:text-slate-300">
-                            {device.latitude != null ? device.latitude.toFixed(6) : '—'}
-                          </span>
-                        )}
+                        <span className="font-mono text-slate-700 dark:text-slate-300">
+                          {device.latitude != null ? device.latitude : '—'}
+                        </span>
                       </td>
 
                       {/* Longitude */}
                       <td className="px-5 py-3.5">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="any"
-                            value={edit.longitude}
-                            onChange={(e) => setEdit((prev) => prev && { ...prev, longitude: e.target.value })}
-                            className="w-32 px-2 py-1.5 rounded-lg text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                            placeholder="e.g. 72.8777"
-                          />
-                        ) : (
-                          <span className="font-mono text-slate-700 dark:text-slate-300">
-                            {device.longitude != null ? device.longitude.toFixed(6) : '—'}
-                          </span>
-                        )}
+                        <span className="font-mono text-slate-700 dark:text-slate-300">
+                          {device.longitude != null ? device.longitude : '—'}
+                        </span>
                       </td>
 
                       {/* Actions */}
                       <td className="px-5 py-3.5 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={saveEdit}
-                              disabled={edit.saving}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white transition-colors disabled:opacity-50"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              {edit.saving ? 'Saving…' : 'Save'}
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={edit.saving}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-200 dark:bg-white/8 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => startEdit(device)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Edit
-                          </button>
-                        )}
+                        <button
+                          onClick={() => startEdit(device)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
                       </td>
-                    </motion.tr>
+                    </tr>
                   );
                 })}
-              </AnimatePresence>
             </tbody>
           </table>
+          </div>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-4 shrink-0 flex items-center justify-between px-4 py-3 bg-white dark:bg-[#1e293b]/60 border border-slate-200 dark:border-white/8 rounded-xl">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              Showing <span className="font-medium text-slate-900 dark:text-white">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+              <span className="font-medium text-slate-900 dark:text-white">
+                {Math.min(currentPage * pageSize, totalCount)}
+              </span>{' '}
+              of <span className="font-medium text-slate-900 dark:text-white">{totalCount}</span> results
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchDevices(currentPage - 1)}
+                disabled={currentPage === 1 || loading}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => fetchDevices(pageNum)}
+                      disabled={loading}
+                      className={`w-8 h-8 text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed ${
+                        currentPage === pageNum
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => fetchDevices(currentPage + 1)}
+                disabled={currentPage === totalPages || loading}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      {edit && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/72 p-4 backdrop-blur-md">
+          <div className="w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.32)] dark:border-white/10 dark:bg-[#0f172a]">
+            {/* Modal Header */}
+            <div className="relative overflow-hidden border-b border-slate-200 px-7 py-6 dark:border-white/10">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_42%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_36%)]" />
+              <div className="relative flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-4">
+                  <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${getDeviceMeta(edit.deviceType).iconWrap}`}>
+                    {(() => {
+                      const Icon = getDeviceMeta(edit.deviceType).icon;
+                      return <Icon className={`h-6 w-6 ${getDeviceMeta(edit.deviceType).iconColor}`} />;
+                    })()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${DEVICE_TYPE_COLORS[edit.deviceType] ?? 'border border-slate-400/20 bg-slate-500/10 text-slate-500'}`}>
+                        {DEVICE_TYPE_LABELS[edit.deviceType] ?? edit.deviceType}
+                      </span>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${edit.networkStatus === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-slate-500/10 text-slate-500 dark:text-slate-400'}`}>
+                        {edit.networkStatus === 'ONLINE' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                        {edit.networkStatus}
+                      </span>
+                    </div>
+                    <h2 className="mt-3 truncate text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                      {edit.deviceName}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Update the live configuration fields for this device.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={cancelEdit}
+                  disabled={edit.saving}
+                  className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-200"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="grid gap-6 px-7 py-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-5">
+                <div className="space-y-4 rounded-2xl border border-slate-200 p-5 dark:border-white/10">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      IP Address <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={edit.ip_address}
+                      onChange={(e) => setEdit((prev) => prev && { ...prev, ip_address: e.target.value })}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/15 dark:bg-slate-900 dark:text-white"
+                      placeholder="e.g. 192.168.1.50"
+                      disabled={edit.saving}
+                    />
+                  </div>
+
+                  {COORD_EDIT_TYPES.has(edit.deviceType) && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Latitude <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={edit.latitude}
+                          onChange={(e) => setEdit((prev) => prev && { ...prev, latitude: e.target.value })}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/15 dark:bg-slate-900 dark:text-white"
+                          placeholder="e.g. 19.0760"
+                          disabled={edit.saving}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Longitude <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={edit.longitude}
+                          onChange={(e) => setEdit((prev) => prev && { ...prev, longitude: e.target.value })}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/15 dark:bg-slate-900 dark:text-white"
+                          placeholder="e.g. 72.8777"
+                          disabled={edit.saving}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {STATION_EDIT_TYPES.has(edit.deviceType) && (
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Station Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={edit.station_name}
+                        onChange={(e) => setEdit((prev) => prev && { ...prev, station_name: e.target.value })}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/15 dark:bg-slate-900 dark:text-white"
+                        placeholder="e.g. Mumbai Station"
+                        disabled={edit.saving}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Device Details</h3>
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3 text-sm dark:border-white/10">
+                      <span className="text-slate-500 dark:text-slate-400">Device Type</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-100">{DEVICE_TYPE_LABELS[edit.deviceType] ?? edit.deviceType}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3 text-sm dark:border-white/10">
+                      <span className="text-slate-500 dark:text-slate-400">Network</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-100">{edit.networkStatus}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3 text-sm dark:border-white/10">
+                      <span className="text-slate-500 dark:text-slate-400">Station</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-100">{edit.station_name || '—'}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">Editable Fields</span>
+                      <span className="max-w-[180px] text-right font-medium text-slate-800 dark:text-slate-100">
+                        {COORD_EDIT_TYPES.has(edit.deviceType) ? 'IP Address, Latitude, Longitude' : 'IP Address, Station Name'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+                  <h3 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Validation Rules</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                    <li>IP Address is required for all device types.</li>
+                    <li>Latitude must be between -90 and 90.</li>
+                    <li>Longitude must be between -180 and 180.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-7 py-5 dark:border-white/10">
+              <button
+                onClick={cancelEdit}
+                disabled={edit.saving}
+                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={edit.saving}
+                className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {edit.saving ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -361,6 +361,32 @@ def list_devices(request):
 
 @extend_schema(
     tags=["Device"],
+    description="Add a new device to the DeviceInfo table.",
+    request=DeviceInfoSerializer,
+    responses={201: DeviceInfoSerializer},
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_device(request):
+    serializer = DeviceInfoSerializer(data=request.data)
+    if not serializer.is_valid():
+        return error_response("INVALID_PARAMS", serializer.errors, 400)
+
+    device = serializer.save()
+
+    _device_audit_log(
+        request,
+        "ADD_DEVICE",
+        request.data,
+        {"device_id": str(device.device_id)},
+    )
+
+    return success_response(data=DeviceInfoSerializer(device).data, message="Device created", http_status=201)
+
+
+
+@extend_schema(
+    tags=["Device"],
     description="Sync nodes from a master device. Hits /get_node to fetch master info, "
                 "then /get_connected_node to fetch all connected remote sub-nodes and saves them.",
     parameters=[
@@ -704,21 +730,30 @@ def _find_sensor_device(row):
 @extend_schema(
     tags=["Device"],
     description=(
-        "List all Active Cellular, Passive Cellular, and Satellite Interceptor devices "
-        "for sensor location management. Admin-only."
+        "List all devices from the database with pagination. "
+        "Admin-only."
     ),
     responses={200: DeviceInfoSerializer(many=True)},
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def list_sensor_locations(request):
+def list_all_sensors(request):
     from authentication.permissions import IsSuperAdmin
     if not IsSuperAdmin().has_permission(request, None):
         return error_response("FORBIDDEN", "Admin access required.", 403)
 
-    devices = DeviceInfo.objects.filter(device_type__in=SENSOR_MGMT_TYPES).order_by("device_type", "node_name")
+    devices = DeviceInfo.objects.all().order_by("device_type", "node_name")
+    
+    paginator = StandardResultsSetPagination()
+    page = paginator.paginate_queryset(devices, request)
+    if page is not None:
+        response = paginator.get_paginated_response(DeviceInfoSerializer(page, many=True).data)
+        response.data["status"] = "SUCCESS"
+        response.data["message"] = "All devices retrieved"
+        return response
+    
     serializer = DeviceInfoSerializer(devices, many=True)
-    return success_response(data=serializer.data, message="Sensor locations retrieved")
+    return success_response(data=serializer.data, message="All devices retrieved")
 
 
 @extend_schema(
@@ -841,3 +876,65 @@ def upload_sensor_locations(request):
         },
         message="Sensor locations processed",
     )
+
+
+@extend_schema(
+    tags=["Device"],
+    description="Get list of unique device types available in the database.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_device_types(request):
+    device_types = DeviceInfo.objects.values_list("device_type", flat=True).distinct().order_by("device_type")
+    device_type_list = list(device_types)
+    
+    return success_response(
+        data={"device_types": device_type_list, "count": len(device_type_list)},
+        message="Device types retrieved"
+    )
+
+
+@extend_schema(
+    tags=["Device"],
+    description="Retrieve, partially update (ip_address, latitude, longitude, station_name only), or delete a single device by `device_id`.",
+    responses={200: DeviceInfoSerializer},
+)
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def device_detail(request, device_id):
+    try:
+        device = DeviceInfo.objects.get(device_id=device_id)
+    except DeviceInfo.DoesNotExist:
+        return error_response("NOT_FOUND", "Device not found", 404)
+
+    if request.method == "GET":
+        return success_response(data=DeviceInfoSerializer(device).data, message="Device retrieved")
+
+    if request.method == "PATCH":
+        # Only allow updating specific fields
+        allowed_fields = ["ip_address", "latitude", "longitude", "station_name"]
+        update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        
+        if not update_data:
+            return error_response(
+                "INVALID_PARAMS", 
+                f"No valid fields to update. Allowed fields: {', '.join(allowed_fields)}",
+                400
+            )
+        
+        serializer = DeviceInfoSerializer(device, data=update_data, partial=True)
+        if not serializer.is_valid():
+            return error_response("INVALID_PARAMS", serializer.errors, 400)
+        device = serializer.save()
+        _device_audit_log(
+            request,
+            "UPDATE_DEVICE",
+            {"device_id": str(device_id), "payload": update_data},
+            {"device_id": str(device.device_id)},
+        )
+        return success_response(data=DeviceInfoSerializer(device).data, message="Device updated")
+
+    # DELETE
+    device.delete()
+    _device_audit_log(request, "DELETE_DEVICE", {"device_id": str(device_id)}, {})
+    return success_response(data=None, message="Device deleted")

@@ -115,7 +115,7 @@ kubectl get svc -n himshravan
 <!-- start docker-UP -->
 
 sudo docker compose up -d
-
+docker compose up --build
 <!-- build -->
 
 sudo systemctl restart docker
@@ -125,3 +125,5 @@ sudo systemctl restart docker
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+

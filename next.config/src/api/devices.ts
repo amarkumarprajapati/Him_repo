@@ -80,11 +80,20 @@ export async function listDeviceRegions(): Promise<DeviceRegionsResponse> {
 export interface SensorLocationsResponse {
   status: string;
   message: string;
-  data: DeviceItem[];
+  count?: number;
+  total_pages?: number;
+  current_page?: number;
+  results?: DeviceItem[];
+  data?: DeviceItem[];
 }
 
-export async function listSensorLocations(): Promise<SensorLocationsResponse> {
-  const { data } = await apiClient.get<SensorLocationsResponse>(ENDPOINTS.devices.sensorLocations);
+export async function listSensorLocations(page?: number, pageSize?: number): Promise<SensorLocationsResponse> {
+  const { data } = await apiClient.get<SensorLocationsResponse>(ENDPOINTS.devices.sensorLocations, {
+    params: {
+      page: page || 1,
+      page_size: pageSize || 10,
+    },
+  });
   return data;
 }
 
@@ -99,17 +108,28 @@ export interface UpdateSensorLocationResponse {
   data: DeviceItem;
 }
 
-export interface UploadSensorLocationsResponse {
+export interface UpdateDevicePayload {
+  ip_address?: string;
+  latitude?: number;
+  longitude?: number;
+  station_name?: string;
+}
+
+export interface UpdateDeviceResponse {
   status: string;
   message: string;
-  data: {
-    updated_count: number;
-    failed_count: number;
-    errors: Array<{
-      row: number;
-      message: string;
-    }>;
-  };
+  data: DeviceItem;
+}
+
+export async function updateDevice(
+  deviceId: string,
+  payload: UpdateDevicePayload,
+): Promise<UpdateDeviceResponse> {
+  const { data } = await apiClient.patch<UpdateDeviceResponse>(
+    ENDPOINTS.devices.detail(deviceId),
+    payload,
+  );
+  return data;
 }
 
 export async function updateSensorLocation(
@@ -119,24 +139,6 @@ export async function updateSensorLocation(
   const { data } = await apiClient.patch<UpdateSensorLocationResponse>(
     ENDPOINTS.devices.sensorLocationUpdate(deviceId),
     payload,
-  );
-  return data;
-}
-
-export async function uploadSensorLocations(
-  file: File,
-): Promise<UploadSensorLocationsResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const { data } = await apiClient.post<UploadSensorLocationsResponse>(
-    ENDPOINTS.devices.sensorLocationsUpload,
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    },
   );
   return data;
 }

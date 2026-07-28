@@ -205,7 +205,7 @@ export function NodeDetailsCard({ node, position, onClose, theme, mapInstance }:
               </p>
               <p className={`text-[12px] ${isDark ? "text-slate-200" : "text-slate-700"} font-mono mt-1`}>
                 {node.latitude != null && node.longitude != null
-                  ? `${node.latitude.toFixed(5)}, ${node.longitude.toFixed(5)}`
+                  ? `${node.latitude}, ${node.longitude}`
                   : "—"}
               </p>
             </div>
