@@ -1,6 +1,9 @@
+import csv
+import io
+import json
 import platform
-import subprocess
 import signal
+import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -619,3 +622,222 @@ def _device_audit_log(request, action, req_payload, resp_payload):
         )
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Sensor Management – Admin-only lat/lng management for cellular & satellite
+# ---------------------------------------------------------------------------
+
+SENSOR_MGMT_TYPES = [
+    DeviceInfo.DEVICE_ACTIVE_CELL,
+    DeviceInfo.DEVICE_PASSIVE_CELL,
+    DeviceInfo.DEVICE_SATELLITE,
+]
+
+
+def _normalize_sensor_row(row):
+    return {
+        str(key).strip().lower(): value.strip() if isinstance(value, str) else value
+        for key, value in row.items()
+        if key is not None
+    }
+
+
+def _parse_sensor_location_rows(uploaded_file):
+    filename = (uploaded_file.name or "").lower()
+    try:
+        content = uploaded_file.read().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Uploaded file must be UTF-8 encoded.") from exc
+
+    if not content.strip():
+        raise ValueError("Uploaded file is empty.")
+
+    if filename.endswith(".json"):
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid JSON file.") from exc
+
+        if isinstance(parsed, dict):
+            for key in ("data", "rows", "items"):
+                if isinstance(parsed.get(key), list):
+                    parsed = parsed[key]
+                    break
+
+        if not isinstance(parsed, list):
+            raise ValueError("JSON upload must contain a list of sensor rows.")
+
+        return [_normalize_sensor_row(row) for row in parsed if isinstance(row, dict)]
+
+    if filename.endswith(".csv") or "," in content.splitlines()[0]:
+        reader = csv.DictReader(io.StringIO(content))
+        if not reader.fieldnames:
+            raise ValueError("CSV file must include a header row.")
+        return [_normalize_sensor_row(row) for row in reader]
+
+    raise ValueError("Unsupported file format. Use CSV or JSON.")
+
+
+def _parse_coordinate(value, field_name, minimum, maximum):
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"'{field_name}' must be a valid number.") from exc
+
+    if number < minimum or number > maximum:
+        raise ValueError(f"'{field_name}' must be between {minimum} and {maximum}.")
+    return number
+
+
+def _find_sensor_device(row):
+    filters = {"device_type__in": SENSOR_MGMT_TYPES}
+    if row.get("device_id"):
+        return DeviceInfo.objects.filter(**filters, device_id=row["device_id"]).first()
+    if row.get("node_id"):
+        return DeviceInfo.objects.filter(**filters, node_id=row["node_id"]).first()
+    if row.get("ip_address"):
+        return DeviceInfo.objects.filter(**filters, ip_address=row["ip_address"]).first()
+    return None
+
+
+@extend_schema(
+    tags=["Device"],
+    description=(
+        "List all Active Cellular, Passive Cellular, and Satellite Interceptor devices "
+        "for sensor location management. Admin-only."
+    ),
+    responses={200: DeviceInfoSerializer(many=True)},
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_sensor_locations(request):
+    from authentication.permissions import IsSuperAdmin
+    if not IsSuperAdmin().has_permission(request, None):
+        return error_response("FORBIDDEN", "Admin access required.", 403)
+
+    devices = DeviceInfo.objects.filter(device_type__in=SENSOR_MGMT_TYPES).order_by("device_type", "node_name")
+    serializer = DeviceInfoSerializer(devices, many=True)
+    return success_response(data=serializer.data, message="Sensor locations retrieved")
+
+
+@extend_schema(
+    tags=["Device"],
+    description="Update latitude and/or longitude for a sensor device (Admin-only).",
+    responses={200: DeviceInfoSerializer},
+)
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_sensor_location(request, device_id):
+    from authentication.permissions import IsSuperAdmin
+    if not IsSuperAdmin().has_permission(request, None):
+        return error_response("FORBIDDEN", "Admin access required.", 403)
+
+    try:
+        device = DeviceInfo.objects.get(device_id=device_id, device_type__in=SENSOR_MGMT_TYPES)
+    except DeviceInfo.DoesNotExist:
+        return error_response("NOT_FOUND", "Device not found or not a supported sensor type.", 404)
+
+    latitude = request.data.get("latitude")
+    longitude = request.data.get("longitude")
+
+    if latitude is None and longitude is None:
+        return error_response("MISSING_PARAMS", "Provide at least one of 'latitude' or 'longitude'.", 400)
+
+    update_fields = ["updated_at"]
+    if latitude is not None:
+        try:
+            device.latitude = float(latitude)
+            update_fields.append("latitude")
+        except (TypeError, ValueError):
+            return error_response("INVALID_PARAMS", "'latitude' must be a valid number.", 400)
+
+    if longitude is not None:
+        try:
+            device.longitude = float(longitude)
+            update_fields.append("longitude")
+        except (TypeError, ValueError):
+            return error_response("INVALID_PARAMS", "'longitude' must be a valid number.", 400)
+
+    device.save(update_fields=update_fields)
+
+    _device_audit_log(
+        request,
+        "UPDATE_SENSOR_LOCATION",
+        {"device_id": str(device_id), "latitude": latitude, "longitude": longitude},
+        {"latitude": device.latitude, "longitude": device.longitude},
+    )
+
+    serializer = DeviceInfoSerializer(device)
+    return success_response(data=serializer.data, message="Sensor location updated")
+
+
+@extend_schema(
+    tags=["Device"],
+    description=(
+        "Bulk update latitude and longitude for sensor devices from a CSV or JSON file. "
+        "Each row must include one of device_id, node_id, or ip_address plus latitude and longitude. Admin-only."
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_sensor_locations(request):
+    from authentication.permissions import IsSuperAdmin
+
+    if not IsSuperAdmin().has_permission(request, None):
+        return error_response("FORBIDDEN", "Admin access required.", 403)
+
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file is None:
+        return error_response("MISSING_FILE", "Upload a CSV or JSON file in the 'file' field.", 400)
+
+    try:
+        rows = _parse_sensor_location_rows(uploaded_file)
+    except ValueError as exc:
+        return error_response("INVALID_FILE", str(exc), 400)
+
+    updated_count = 0
+    errors = []
+
+    for index, raw_row in enumerate(rows, start=2):
+        row = _normalize_sensor_row(raw_row)
+        latitude = row.get("latitude")
+        longitude = row.get("longitude")
+
+        if latitude in (None, "") and longitude in (None, ""):
+            errors.append({"row": index, "message": "Provide latitude and longitude."})
+            continue
+
+        device = _find_sensor_device(row)
+        if device is None:
+            errors.append({
+                "row": index,
+                "message": "Sensor device not found. Use device_id, node_id, or ip_address for a supported sensor.",
+            })
+            continue
+
+        try:
+            device.latitude = _parse_coordinate(latitude, "latitude", -90, 90)
+            device.longitude = _parse_coordinate(longitude, "longitude", -180, 180)
+        except ValueError as exc:
+            errors.append({"row": index, "message": str(exc)})
+            continue
+
+        device.save(update_fields=["latitude", "longitude", "updated_at"])
+        updated_count += 1
+
+    _device_audit_log(
+        request,
+        "UPLOAD_SENSOR_LOCATIONS",
+        {"filename": uploaded_file.name, "row_count": len(rows)},
+        {"updated_count": updated_count, "failed_count": len(errors)},
+    )
+
+    return success_response(
+        data={
+            "updated_count": updated_count,
+            "failed_count": len(errors),
+            "errors": errors,
+        },
+        message="Sensor locations processed",
+    )
