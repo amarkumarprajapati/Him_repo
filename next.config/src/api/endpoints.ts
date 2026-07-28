@@ -30,6 +30,9 @@ export const ENDPOINTS = {
   devices: {
     list: "/device/list/",
     regions: "/device/regions/",
+    sensorLocations: "/device/sensor-locations/",
+    sensorLocationsUpload: "/device/sensor-locations/upload/",
+    sensorLocationUpdate: (id: string) => `/device/sensor-locations/${id}/`,
   },
   events: {
     list: "/events/",

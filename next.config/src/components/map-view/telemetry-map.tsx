@@ -110,18 +110,23 @@ function getNodeSvg(type: NodeType, color: string) {
 }
 
 function createNodeIcon(type: NodeType, color: string, networkStatus?: string) {
-  const svg = getNodeSvg(type, color);
+  const svgColor = networkStatus === 'ONLINE' ? '#22c55e' : networkStatus === 'OFFLINE' ? '#ef4444' : color;
+  const svg = getNodeSvg(type, svgColor);
   let borderColor = color;
+  let background = 'rgba(15,23,42,0.92)';
+
   if (networkStatus === 'ONLINE') {
-    borderColor = 'green';
+    borderColor = '#22c55e';
+    background = 'rgba(34,197,94,0.18)';
   } else if (networkStatus === 'OFFLINE') {
-    borderColor = 'red';
+    borderColor = '#ef4444';
+    background = 'rgba(239,68,68,0.18)';
   }
+
   return L.divIcon({
     className: "node-marker",
     html: `<div style="position:relative;width:56px;height:56px;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-    
-      <div style="position:absolute;width:38px;height:38px;border-radius:9999px;background:rgba(15,23,42,0.92);border:1px solid ${borderColor};display:flex;align-items:center;justify-content:center;">${svg}</div>
+      <div style="position:absolute;width:38px;height:38px;border-radius:9999px;background:${background};border:2px solid ${borderColor};display:flex;align-items:center;justify-content:center;">${svg}</div>
     </div>`,
     iconSize: [56, 56],
     iconAnchor: [28, 28],

@@ -13,6 +13,7 @@ import {
   Monitor,
   FileDown,
   Globe,
+  MapPin,
 } from "lucide-react";
 import { useState } from "react";
 import { useTheme } from "next-themes";
@@ -36,6 +37,7 @@ const MENU_ITEMS: MenuItem[] = [
   { name: "CSV List", icon: FileDown, href: "/map-view/csv-list" },
   //{ name: "Sessions", icon: Clock, href: "/map-view/sessions" },
   { name: "System", icon: Monitor, href: "/map-view/system" },
+  { name: "Sensor Management", icon: MapPin, href: "/map-view/sensor-management" },
   {
     name: "Settings",
     icon: Settings,
@@ -61,6 +63,9 @@ export function Sidebar() {
       return user?.role === "SUPER_ADMIN";
     }
     if (item.name === "CSV List") {
+      return user?.role === "SUPER_ADMIN";
+    }
+    if (item.name === "Sensor Management") {
       return user?.role === "SUPER_ADMIN";
     }
     return true;

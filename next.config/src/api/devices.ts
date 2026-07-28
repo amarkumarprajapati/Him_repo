@@ -72,3 +72,71 @@ export async function listDeviceRegions(): Promise<DeviceRegionsResponse> {
   const { data } = await apiClient.get<DeviceRegionsResponse>(ENDPOINTS.devices.regions);
   return data;
 }
+
+// ---------------------------------------------------------------------------
+// Sensor Management
+// ---------------------------------------------------------------------------
+
+export interface SensorLocationsResponse {
+  status: string;
+  message: string;
+  data: DeviceItem[];
+}
+
+export async function listSensorLocations(): Promise<SensorLocationsResponse> {
+  const { data } = await apiClient.get<SensorLocationsResponse>(ENDPOINTS.devices.sensorLocations);
+  return data;
+}
+
+export interface UpdateSensorLocationPayload {
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface UpdateSensorLocationResponse {
+  status: string;
+  message: string;
+  data: DeviceItem;
+}
+
+export interface UploadSensorLocationsResponse {
+  status: string;
+  message: string;
+  data: {
+    updated_count: number;
+    failed_count: number;
+    errors: Array<{
+      row: number;
+      message: string;
+    }>;
+  };
+}
+
+export async function updateSensorLocation(
+  deviceId: string,
+  payload: UpdateSensorLocationPayload,
+): Promise<UpdateSensorLocationResponse> {
+  const { data } = await apiClient.patch<UpdateSensorLocationResponse>(
+    ENDPOINTS.devices.sensorLocationUpdate(deviceId),
+    payload,
+  );
+  return data;
+}
+
+export async function uploadSensorLocations(
+  file: File,
+): Promise<UploadSensorLocationsResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const { data } = await apiClient.post<UploadSensorLocationsResponse>(
+    ENDPOINTS.devices.sensorLocationsUpload,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  );
+  return data;
+}
