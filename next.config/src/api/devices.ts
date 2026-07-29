@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import { ENDPOINTS } from './endpoints';
 
-export type DeviceType = 'DF' | 'DRONE' | 'MONITORING_SENSOR' | 'SATELLITE' | 'PASSIVE_CELL' | 'ACTIVE_CELL';
+export type DeviceType = 'DF' | 'NODE' | 'DRONE' | 'SATELLITE' | 'PASSIVE_CELL' | 'ACTIVE_CELL';
 export type DeviceNetworkStatus = 'ONLINE' | 'OFFLINE';
 export type DeviceHeartbeatStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -141,57 +141,4 @@ export async function updateSensorLocation(
     payload,
   );
   return data;
-}
-
-// ---------------------------------------------------------------------------
-// Device Types
-// ---------------------------------------------------------------------------
-
-export interface DeviceTypesResponse {
-  status: string;
-  message: string;
-  data: {
-    device_types: string[];
-    count: number;
-  };
-}
-
-export async function getDeviceTypes(): Promise<DeviceTypesResponse> {
-  const { data } = await apiClient.get<DeviceTypesResponse>(ENDPOINTS.devices.types);
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// Add Device
-// ---------------------------------------------------------------------------
-
-export interface AddDevicePayload {
-  device_type: string;
-  ip_address: string;
-  port: number;
-  node_id?: string;
-  node_name?: string;
-  latitude: number;
-  longitude: number;
-  station_name?: string;
-  csvrunning_status?: number;
-  quard_id: number;
-}
-
-export interface AddDeviceResponse {
-  status: string;
-  message: string;
-  data: DeviceItem;
-}
-
-export async function addDevice(payload: AddDevicePayload): Promise<AddDeviceResponse> {
-  const { data } = await apiClient.post<AddDeviceResponse>(
-    ENDPOINTS.devices.add,
-    payload,
-  );
-  return data;
-}
-
-export async function deleteDevice(deviceId: string): Promise<void> {
-  await apiClient.delete(ENDPOINTS.devices.detail(deviceId));
 }

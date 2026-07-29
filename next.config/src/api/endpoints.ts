@@ -33,8 +33,6 @@ export const ENDPOINTS = {
     sensorLocations: "/device/sensorlist/",
     sensorLocationUpdate: (id: string) => `/device/sensor-locations/${id}/`,
     detail: (id: string) => `/device/${id}/`,
-    types: "/device/types/",
-    add: "/device/add/",
   },
   events: {
     list: "/events/",
