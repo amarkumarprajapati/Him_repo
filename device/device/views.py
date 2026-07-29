@@ -82,7 +82,7 @@ def discover_device(request):
     results = []
 
     if device_type == DeviceInfo.DEVICE_DF:
-        # Hit DF/health once per unique IP, then update all matching devices
+
         unique_ips = set((d.ip_address, d.port) for d in devices)
         for ip, port in unique_ips:
             health_url = f"http://{ip}:{port}/{DF_HEALTH_ENDPOINT}"
@@ -90,8 +90,6 @@ def discover_device(request):
                 resp = requests.get(health_url, timeout=5)
                 resp.raise_for_status()
                 data = resp.json()
-
-                # Find the node matching this IP in the response
                 matched_node = None
                 for key, node_info in data.items():
                     if isinstance(node_info, dict) and node_info.get("ip") == ip:
@@ -105,8 +103,6 @@ def discover_device(request):
                 operating_status = matched_node.get("operating_status", "").upper()
                 status = matched_node.get("status", "")
                 station_name = matched_node.get("site_name", "")
-
-                # Get devices matching this IP (2 per IP: one for df_ant_1, one for df_ant_2)
                 ip_devices = [d for d in devices if d.ip_address == ip and d.port == port]
                 antenna_keys = ["df_ant_1", "df_ant_2"]
 
@@ -273,7 +269,6 @@ def discover_device(request):
                 latitude = node.get("latitude")
                 longitude = node.get("longitude")
                 status = node.get("status", "")
-
                 device.node_id = node_id
                 device.node_name = node_name
                 device.operating_status = DeviceInfo.OPERATING_MASTER if operating_status == "MASTER" else DeviceInfo.OPERATING_REMOTE
@@ -742,7 +737,7 @@ def list_all_sensors(request):
     if not IsSuperAdmin().has_permission(request, None):
         return error_response("FORBIDDEN", "Admin access required.", 403)
 
-    devices = DeviceInfo.objects.all().order_by("device_type", "node_name")
+    devices = DeviceInfo.objects.all().order_by("-created_at", "-telemetry_timestamp")
     
     paginator = StandardResultsSetPagination()
     page = paginator.paginate_queryset(devices, request)
@@ -885,8 +880,7 @@ def upload_sensor_locations(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_device_types(request):
-    device_types = DeviceInfo.objects.values_list("device_type", flat=True).distinct().order_by("device_type")
-    device_type_list = list(device_types)
+    device_type_list = [choice[0] for choice in DeviceInfo.DEVICE_TYPE_CHOICES]
     
     return success_response(
         data={"device_types": device_type_list, "count": len(device_type_list)},
@@ -896,7 +890,7 @@ def get_device_types(request):
 
 @extend_schema(
     tags=["Device"],
-    description="Retrieve, partially update (ip_address, latitude, longitude, station_name only), or delete a single device by `device_id`.",
+    description="Retrieve, partially update device details, or delete a single device by `device_id`.",
     responses={200: DeviceInfoSerializer},
 )
 @api_view(["GET", "PATCH", "DELETE"])
@@ -912,7 +906,18 @@ def device_detail(request, device_id):
 
     if request.method == "PATCH":
         # Only allow updating specific fields
-        allowed_fields = ["ip_address", "latitude", "longitude", "station_name"]
+        allowed_fields = [
+            "device_type",
+            "ip_address",
+            "port",
+            "node_id",
+            "node_name",
+            "latitude",
+            "longitude",
+            "station_name",
+            "csvrunning_status",
+            "quard_id",
+        ]
         update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
         
         if not update_data:
